@@ -38,6 +38,6 @@ sub weighter {
   $weight_counts++;
   return 1 if not defined $left;
   return 1 if not defined $right;
-  return 1 if $left ne $right;
+  return 1.5 if $left ne $right;
   return 0;
 }

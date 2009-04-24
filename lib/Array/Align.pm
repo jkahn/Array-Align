@@ -86,7 +86,8 @@ sub _search {
     Array::Align::Step->new(lidx => -1, ridx => -1,
 			    owner => $self, parent => undef,
 			    anchor => 1, # don't return this alignment
-			    cost => 0,
+			    penalty => 0,
+			    num_step => 0,
 			    );
 
   my %best_costs;
@@ -114,7 +115,7 @@ sub _search {
     if ($VERBOSE > 1) {
       warn "left: $best->{lidx}/$#{$self->{left}} " .
 	"right: $best->{ridx}/$#{$self->{right}} : " .
-	  sprintf ("%3f (%3f)", $best->cost, $heuristic ). "\n";
+	  sprintf ("%3f (%3f)", $best->{penalty}, $heuristic ). "\n";
     }
 
     if ($best->is_finished()) {
@@ -159,14 +160,21 @@ sub pairwise {
   return $best->pairs();
 }
 
-=item cost()
+=item penalty()
+
+=item weight()
+
+two alternative names for the same method.  returns the cumulative
+cost (beyond the shortest-path search) for the best path.
 
 =cut
 
-sub cost {
+sub penalty {
   my ($self, %args) = @_;
-  return $self->{best}->cost;
+  return $self->{best}->{penalty};
 }
+
+sub weight { shift->penalty(@_) }
 
 =back
 
@@ -178,9 +186,38 @@ Methods that must be implemented by the subclass
 
 =item weighter
 
+Provide an additional penalty for a given step. This penalty should be scaled according to the cost of a single step (a sub, delete, or insert).
+
+If this method returns a uniform value, you have roughly the behavior
+of C<paste>, which is not very interesting.  If it returns a large
+value when both C<left> and C<right> are defined, then you will get a
+manhattan walk (no diagonals).
+
+Levenshtein behavior:
+
+  sub weighter {
+    my ($self, $left, $right) = @_;
+    return 1 if not defined $left;
+    return 1 if not defined $right;
+    return 1.5 if $left ne $right;
+    return 0;
+  }
+
+Note that this is an B<additional> penalty. Every step (diagonal or
+not) has cost 1 plus the penalty returned by the C<weighter> method,
+in order to find the shortest alignment first.
+
+Because the number of steps is included (as mentioned above), the
+approach will strongly prefer substitutions to singleton steps on
+either direction.  If you have a pair that should receive a left-step
+and right-step (insertion and deletion) rather than a diagonal
+(substitution), make sure that:
+
+  weighter(left, right) > weighter(left, undef) + weighter(undef, right) + 1
+
 =item admissible_heuristic
 
-Given arguments:
+Given two arguments:
 
 =over
 
@@ -197,25 +234,30 @@ the estimate to truth, the faster.  (the method can use at C<<
 $self->{left} >> and C<< $self->{right} >> arrays if needed, though
 modifying those arrays would break things, so don't.)
 
-By default, the admissible heuristic is the number of non-diagonal
-cells remaining, minus 1 for safety.  This estimate assumes that as
-many zero-cost matches as possible are created, and the remainder is
-insertions/deletions of cost 1.
+By default, the admissible heuristic is the max of number of right
+cells remaining and number of left cells remaining -- this assumes
+that the only cost to incur will be the step cost, that is, that
+C<weighter> returns zero for every step, and the shortest path is
+chosen.
 
-The default may not work if there are many insertions/deletions that
-get cost of less than 1.
+If you implement this method, you should probably assume this as a
+lower bound and then see if you can reliably increase this
+underestimate.
 
 =cut
 
 sub admissible_heuristic {
-  my ($self, %args) = @_;
+#   my ($self, %args) = @_;
 
-  my $l_remaining = $#{$self->{left}}  - $args{lidx};
-  my $r_remaining = $#{$self->{right}} - $args{ridx};
+  my $l_remaining = $#{$_[0]->{left}}  - $_[1];
+  my $r_remaining = $#{$_[0]->{right}} - $_[2];
 
-  my $estimate = abs($l_remaining - $r_remaining);
-  return 0 if $estimate < 0;
-  return $estimate;
+  if ($l_remaining > $r_remaining) {
+    return $l_remaining;
+  }
+  return $r_remaining;
+#   use List::Util 'max';
+#   return max ($l_remaining, $r_remaining);
 }
 
 =back
@@ -328,15 +370,14 @@ sub pairs {
 }
 
 sub heuristic_cost {
-  my ($self, %args) = @_;
-  return $self->{cost} +
-    $self->{owner}->admissible_heuristic(lidx => $self->{lidx},
-					 ridx => $self->{ridx});
-}
-
-sub cost {
-  my ($self, %args) = @_;
-  return $self->{cost};
+  my ($self) = shift;
+  if (not exists $self->{_hcost}) {
+    my (%args) = @_;
+    $self->{_hcost} = $self->{penalty} + $self->{num_step} +
+      $self->{owner}->admissible_heuristic($self->{lidx},
+					   $self->{ridx});
+  }
+  return $self->{_hcost};
 }
 
 sub is_finished {
@@ -361,16 +402,18 @@ sub take_step {
   my $left_tok  = $self->{owner}{left}[$lidx] if $args{left};
   my $right_tok = $self->{owner}{right}[$ridx] if $args{right};
 
-  my $incr_cost = $self->{owner}->weighter($left_tok, $right_tok);
+  my $incr_penalty = 1000 * $self->{owner}->weighter($left_tok, $right_tok);
 
-  my $cost = $self->cost() + $incr_cost;
+  my $penalty = $self->{penalty} + $incr_penalty;
 
   return $class->new(lidx => $lidx, ridx => $ridx,
 		     owner => $self->{owner},
 		     left => $args{left},
 		     right => $args{right},
-		     cost => $cost,
-		     parent => $self);
+		     incr_penalty => $incr_penalty,
+		     penalty => $penalty,
+		     parent => $self,
+		     num_step => ($self->{num_step} + 1));
 }
 
 

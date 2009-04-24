@@ -18,7 +18,7 @@ Version 0.01
 =cut
 
 our $VERSION = '0.01';
-
+our $VERBOSE = 1;  # while building
 
 =head1 SYNOPSIS
 
@@ -63,6 +63,9 @@ sub new {
   croak "right arg to $class->new not an arrayref"
     unless ref $right eq 'ARRAY';
 
+  warn scalar (@$right) . " items in right\n" if $VERBOSE;
+  warn scalar (@$left) . " items in left\n" if $VERBOSE;
+
   my $self = bless \%args, $class;
   if ($self->can('init')) {
     $self->init();
@@ -99,9 +102,20 @@ sub _search {
     my $best = $heap->extract_first();
     last if (not defined $best);  # no more candidates
 
-    warn "left: $best->{lidx}/$#{$self->{left}} " .
-      "right: $best->{ridx}/$#{$self->{right}} : " .
-	sprintf ("%3f (%3f)", $best->cost, $best->heuristic_cost ). "\n";
+    my $heuristic = $best->heuristic_cost();
+
+    if (defined $best_costs{$best->{lidx}}{$best->{ridx}} and
+	$best_costs{$best->{lidx}}{$best->{ridx}} <= $heuristic) {
+      next;
+    }
+
+
+    $best_costs{$best->{lidx}}{$best->{ridx}} = $heuristic;
+    if ($VERBOSE > 1) {
+      warn "left: $best->{lidx}/$#{$self->{left}} " .
+	"right: $best->{ridx}/$#{$self->{right}} : " .
+	  sprintf ("%3f (%3f)", $best->cost, $heuristic ). "\n";
+    }
 
     if ($best->is_finished()) {
       push @solutions, $best;

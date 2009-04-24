@@ -4,5 +4,9 @@ Makefile.PL
 README
 lib/Array/Align.pm
 t/00-load.t
+t/10-test-align.t
+t/20-test-longer.t
 t/pod-coverage.t
 t/pod.t
+t/left.txt
+t/right.txt

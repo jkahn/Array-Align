@@ -171,7 +171,7 @@ cost (beyond the shortest-path search) for the best path.
 
 sub penalty {
   my ($self, %args) = @_;
-  return $self->{best}->{penalty};
+  return $self->{best}->{penalty} / $self->weight_scale() ;
 }
 
 sub weight { shift->penalty(@_) }
@@ -186,7 +186,9 @@ Methods that must be implemented by the subclass
 
 =item weighter
 
-Provide an additional penalty for a given step. This penalty should be scaled according to the cost of a single step (a sub, delete, or insert).
+Provide an additional penalty for a given step. This penalty should be
+scaled according to the cost of a single step (a sub, delete, or
+insert).
 
 If this method returns a uniform value, you have roughly the behavior
 of C<paste>, which is not very interesting.  If it returns a large
@@ -213,7 +215,8 @@ either direction.  If you have a pair that should receive a left-step
 and right-step (insertion and deletion) rather than a diagonal
 (substitution), make sure that:
 
-  weighter(left, right) > weighter(left, undef) + weighter(undef, right) + 1
+  weighter(left, right) >
+      weighter(left, undef) + weighter(undef, right) + 1/WEIGHT_SCALE
 
 =item admissible_heuristic
 
@@ -256,9 +259,23 @@ sub admissible_heuristic {
     return $l_remaining;
   }
   return $r_remaining;
-#   use List::Util 'max';
-#   return max ($l_remaining, $r_remaining);
 }
+
+=item weight_scale
+
+class value that moderates the relative weight of the C<penalty>
+results to the steps.  Setting this to very large values will search
+harder for better solutions rather than shorter ones. Setting it to
+small values will tend to run faster but paths will prefer diagonals
+and possibly miss longer, more optimal arrangements.
+
+Default is
+
+  sub weight_scale { return 1000; }
+
+=cut
+
+sub weight_scale { return 1000; }
 
 =back
 
@@ -402,7 +419,7 @@ sub take_step {
   my $left_tok  = $self->{owner}{left}[$lidx] if $args{left};
   my $right_tok = $self->{owner}{right}[$ridx] if $args{right};
 
-  my $incr_penalty = 1000 * $self->{owner}->weighter($left_tok, $right_tok);
+  my $incr_penalty = $self->{owner}->weight_scale * $self->{owner}->weighter($left_tok, $right_tok);
 
   my $penalty = $self->{penalty} + $incr_penalty;
 

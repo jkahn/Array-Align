@@ -12,15 +12,15 @@ $StringMatch::weight_counts = 0;
 my $aligner = StringMatch->new(left => [ qw(a b c d e) ],
 			       right => [ qw( b d e ) ]);
 ok(defined $aligner, "string match defined");
-ok($aligner->cost == 2, 'string cost correct');
+ok($aligner->penalty == 2, 'string cost correct');
 warn "used $StringMatch::weight_counts counts";
 
 
 $StringMatch::weight_counts = 0;
-my $aligner = StringMatch->new(left => [ qw(a b c d e) ],
+$aligner = StringMatch->new(left => [ qw(a b c d e) ],
 			       right => [ qw(a a b d e f) ]);
 ok(defined $aligner, "string match defined");
-ok($aligner->cost == 3, 'string cost correct');
+ok($aligner->penalty == 3, 'string cost correct');
 warn "used $StringMatch::weight_counts counts";
 
 

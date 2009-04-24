@@ -17,7 +17,7 @@ $StringMatch::weight_counts = 0;
 my $aligner = StringMatch->new(left => \@left,
 			       right => \@right);
 ok(defined $aligner, "string match defined");
-ok($aligner->cost == 3, 'string cost correct');  # two substitutions
+ok($aligner->penalty == 3, 'string cost correct');  # two substitutions
 warn "used $StringMatch::weight_counts counts";
 
 

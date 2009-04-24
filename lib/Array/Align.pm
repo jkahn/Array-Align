@@ -64,6 +64,10 @@ sub new {
     unless ref $right eq 'ARRAY';
 
   my $self = bless \%args, $class;
+  if ($self->can('init')) {
+    $self->init();
+  }
+
   my ($best) = $self->_search(nbest => 1);
   $self->{best} = $best;
   return $self;
@@ -76,12 +80,16 @@ sub _search {
     croak "_search method needs nbest";
   }
   my $init =
-    Array::Align::Step->new(lidx => 0, ridx => 0,
+    Array::Align::Step->new(lidx => -1, ridx => -1,
 			    owner => $self, parent => undef,
-			    cost => 0);
+			    anchor => 1, # don't return this alignment
+			    cost => 0,
+			    );
+
+  my %best_costs;
 
   use Heap::Simple;
-  my $heap = Heap::Simple->new(elements =>[Method => 'cost'],
+  my $heap = Heap::Simple->new(elements =>[Method => 'heuristic_cost'],
 			       order => '<');
   $heap->insert($init);
 
@@ -91,15 +99,29 @@ sub _search {
     my $best = $heap->extract_first();
     last if (not defined $best);  # no more candidates
 
-    my @next = $best->grow();
+    warn "left: $best->{lidx}/$#{$self->{left}} " .
+      "right: $best->{ridx}/$#{$self->{right}} : " .
+	sprintf ("%3f (%3f)", $best->cost, $best->heuristic_cost ). "\n";
 
-    if (not @next) {
-      # must be finished
+    if ($best->is_finished()) {
       push @solutions, $best;
+      next;
     }
-    else {
-      $heap->insert(@next);
+
+    my @next = $best->grow(costs => \%best_costs);
+
+    for my $cand (@next) {
+      $best_costs{$cand->{lidx}}{$cand->{ridx}} = $cand->heuristic_cost();
+      $heap->insert($cand);
     }
+
+#     if (not @next) {
+#       # must be finished
+#       push @solutions, $best;
+#     }
+#     else {
+#       $heap->insert(@next);
+#     }
   }
   return @solutions;
 }
@@ -120,6 +142,15 @@ sub pairwise {
   return $best->pairs();
 }
 
+=item cost()
+
+=cut
+
+sub cost {
+  my ($self, %args) = @_;
+  return $self->{best}->cost;
+}
+
 =back
 
 =head1 CONTRACT PROGRAMMING
@@ -129,6 +160,46 @@ Methods that must be implemented by the subclass
 =over
 
 =item weighter
+
+=item admissible_heuristic
+
+Given arguments:
+
+=over
+
+=item lidx
+
+=item ridx
+
+positions in the two streams
+
+=back
+
+must returns an underestimate of the remaining run-cost. the closer
+the estimate to truth, the faster.  (the method can use at C<<
+$self->{left} >> and C<< $self->{right} >> arrays if needed, though
+modifying those arrays would break things, so don't.)
+
+By default, the admissible heuristic is the number of non-diagonal
+cells remaining, minus 1 for safety.  This estimate assumes that as
+many zero-cost matches as possible are created, and the remainder is
+insertions/deletions of cost 1.
+
+The default may not work if there are many insertions/deletions that
+get cost of less than 1.
+
+=cut
+
+sub admissible_heuristic {
+  my ($self, %args) = @_;
+
+  my $l_remaining = $#{$self->{left}}  - $args{lidx};
+  my $r_remaining = $#{$self->{right}} - $args{ridx};
+
+  my $estimate = abs($l_remaining - $r_remaining);
+  return 0 if $estimate < 0;
+  return $estimate;
+}
 
 =back
 
@@ -201,22 +272,44 @@ sub new {
 
 sub grow {
   my ($self, %args) = @_;
+
+  my $lidx = $self->{lidx};
+  my $ridx = $self->{ridx};
   my @out;
-  push @out, $self->take_step(left => 1, right => 1); # diag
-  push @out, $self->take_step(left => 1, right => 0); # left
-  push @out, $self->take_step(left => 0, right => 1); # right
+  push @out,
+    $self->take_step(left => 1, right => 1,
+		     costs => $args{costs});
+  push @out,
+    $self->take_step(left => 1, right => 0,
+		     costs => $args{costs});
+
+  push @out,
+    $self->take_step(left => 0, right => 1,
+		     costs => $args{costs});
   return @out;
 }
 
 sub pairs {
   my ($self, %args) = @_;
 
-  my $pair = [$self->{owner}{left}[$self->{lidx}],
-	      $self->{owner}{right}[$self->{ridx}] ];
+  return () if $self->{anchor};
+
+  my $pair =
+    [
+     ($self->{left} ? $self->{owner}{left}[$self->{lidx}] : undef),
+     ($self->{right} ? $self->{owner}{right}[$self->{ridx}] : undef)
+    ];
   if (defined $self->{parent}) {
     return ($self->{parent}->pairs(), $pair);
   }
   return ($pair);
+}
+
+sub heuristic_cost {
+  my ($self, %args) = @_;
+  return $self->{cost} +
+    $self->{owner}->admissible_heuristic(lidx => $self->{lidx},
+					 ridx => $self->{ridx});
 }
 
 sub cost {
@@ -224,9 +317,16 @@ sub cost {
   return $self->{cost};
 }
 
+sub is_finished {
+  my ($self, %args) = @_;
+  return ($self->{lidx} == $#{$self->{owner}{left}}
+	  and $self->{ridx} == $#{$self->{owner}{right}});
+}
+
 sub take_step {
   my ($self, %args) = @_;
   my $class = ref $self;
+
 
   my $lidx = $self->{lidx} + $args{left};
   my $ridx = $self->{ridx} + $args{right};
@@ -235,8 +335,14 @@ sub take_step {
   return () if ($#{$self->{owner}{left}}  < $lidx);
   return () if ($#{$self->{owner}{right}} < $ridx);
 
-  my $left_tok  = $self->{owner}{left}[$lidx];
-  my $right_tok = $self->{owner}{right}[$ridx];
+  # don't bother if the cost we've already seen to that point is lower
+  return ()
+    if (defined $args{costs}{$lidx}{$ridx}
+	and $args{costs}{$lidx}{$ridx} < $self->heuristic_cost());
+
+  # only include a token if taking a step in that side
+  my $left_tok  = $self->{owner}{left}[$lidx] if $args{left};
+  my $right_tok = $self->{owner}{right}[$ridx] if $args{right};
 
   my $incr_cost = $self->{owner}->weighter($left_tok, $right_tok);
 
@@ -244,6 +350,8 @@ sub take_step {
 
   return $class->new(lidx => $lidx, ridx => $ridx,
 		     owner => $self->{owner},
+		     left => $args{left},
+		     right => $args{right},
 		     cost => $cost,
 		     parent => $self);
 }

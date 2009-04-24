@@ -93,7 +93,7 @@ sub _search {
   my %best_costs;
 
   use Heap::Simple;
-  my $heap = Heap::Simple->new(elements =>[Method => 'heuristic_cost'],
+  my $heap = Heap::Simple->new(elements =>[Object => 'heuristic_cost'],
 			       order => '<');
   $heap->insert($init);
 

@@ -122,10 +122,13 @@ sub _search {
       next;
     }
 
-    my @next = $best->grow(costs => \%best_costs);
+    my @next = $best->grow();
 
     for my $cand (@next) {
-      $best_costs{$cand->{lidx}}{$cand->{ridx}} = $cand->heuristic_cost();
+      if (defined $best_costs{$cand->{lidx}}{$cand->{ridx}} and
+	  $cand->heuristic_cost > $best_costs{$cand->{lidx}}{$cand->{ridx}}) {
+	next;
+      }
       $heap->insert($cand);
     }
 
@@ -291,15 +294,11 @@ sub grow {
   my $ridx = $self->{ridx};
   my @out;
   push @out,
-    $self->take_step(left => 1, right => 1,
-		     costs => $args{costs});
+    $self->take_step(left => 1, right => 1);
   push @out,
-    $self->take_step(left => 1, right => 0,
-		     costs => $args{costs});
-
+    $self->take_step(left => 1, right => 0);
   push @out,
-    $self->take_step(left => 0, right => 1,
-		     costs => $args{costs});
+    $self->take_step(left => 0, right => 1);
   return @out;
 }
 
@@ -348,11 +347,6 @@ sub take_step {
   # no step possible if we're off the end of the lists
   return () if ($#{$self->{owner}{left}}  < $lidx);
   return () if ($#{$self->{owner}{right}} < $ridx);
-
-  # don't bother if the cost we've already seen to that point is lower
-  return ()
-    if (defined $args{costs}{$lidx}{$ridx}
-	and $args{costs}{$lidx}{$ridx} < $self->heuristic_cost());
 
   # only include a token if taking a step in that side
   my $left_tok  = $self->{owner}{left}[$lidx] if $args{left};

@@ -302,20 +302,29 @@ sub grow {
   return @out;
 }
 
+sub path {
+  my $self = shift;
+  my $cursor = $self;
+  my @path;
+  until ($cursor->{anchor}) {
+    unshift @path, $cursor;
+    $cursor = $cursor->{parent};
+  }
+  return @path;
+}
+
+sub pair {
+  my $self = shift;
+  return [
+	  ($self->{left} ? $self->{owner}{left}[$self->{lidx}] : undef),
+	  ($self->{right} ? $self->{owner}{right}[$self->{ridx}] : undef)
+	 ];
+}
+
 sub pairs {
   my ($self, %args) = @_;
 
-  return () if $self->{anchor};
-
-  my $pair =
-    [
-     ($self->{left} ? $self->{owner}{left}[$self->{lidx}] : undef),
-     ($self->{right} ? $self->{owner}{right}[$self->{ridx}] : undef)
-    ];
-  if (defined $self->{parent}) {
-    return ($self->{parent}->pairs(), $pair);
-  }
-  return ($pair);
+  return map {$_->pair()} $self->path();
 }
 
 sub heuristic_cost {

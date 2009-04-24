@@ -29,9 +29,9 @@ use base 'Array::Align';
 
 our $weight_counts;
 
-sub admissible_heuristic {
-  return 0;
-}
+# sub admissible_heuristic {
+#   return 0;
+# }
 
 sub weighter {
   my ($self, $left, $right) = @_;

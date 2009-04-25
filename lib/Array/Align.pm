@@ -340,10 +340,8 @@ use warnings;
 use Carp;
 
 sub new {
-  my ($class, %args) = @_;
-  my $self = bless \%args, $class;
-  # TO DO: check for existence of lidx, ridx, owner, parent, cost keys
-  return $self;
+  my ($class) = shift;
+  return bless {@_}, $class;
 }
 
 sub grow {

@@ -345,18 +345,11 @@ sub new {
 }
 
 sub grow {
-  my ($self, %args) = @_;
-
-  my $lidx = $self->{lidx};
-  my $ridx = $self->{ridx};
-  my @out;
-  push @out,
-    $self->take_step(left => 1, right => 1);
-  push @out,
-    $self->take_step(left => 1, right => 0);
-  push @out,
-    $self->take_step(left => 0, right => 1);
-  return @out;
+  return (
+	  $_[0]->take_step(1,1),
+	  $_[0]->take_step(1,0),
+	  $_[0]->take_step(0,1)
+	 );
 }
 
 sub path {
@@ -385,37 +378,34 @@ sub pairs {
 }
 
 sub heuristic_cost {
-  my ($self) = shift;
-  if (not exists $self->{_hcost}) {
-    my (%args) = @_;
-    $self->{_hcost} = $self->{penalty} + $self->{num_step} +
-      $self->{owner}->admissible_heuristic($self->{lidx},
-					   $self->{ridx});
+  if (not exists $_[0]->{_hcost}) {
+    $_[0]->{_hcost} = $_[0]->{penalty} + $_[0]->{num_step} +
+      $_[0]->{owner}->admissible_heuristic($_[0]->{lidx},
+					   $_[0]->{ridx});
   }
-  return $self->{_hcost};
+  return $_[0]->{_hcost};
 }
 
 sub is_finished {
-  my ($self, %args) = @_;
-  return ($self->{lidx} == $#{$self->{owner}{left}}
-	  and $self->{ridx} == $#{$self->{owner}{right}});
+  return ($_[0]->{lidx} == $#{$_[0]->{owner}{left}}
+	  and $_[0]->{ridx} == $#{$_[0]->{owner}{right}});
 }
 
 sub take_step {
-  my ($self, %args) = @_;
+  my ($self, $left, $right) = @_;
   my $class = ref $self;
 
 
-  my $lidx = $self->{lidx} + $args{left};
-  my $ridx = $self->{ridx} + $args{right};
+  my $lidx = $self->{lidx} + $left;
+  my $ridx = $self->{ridx} + $right;
 
   # no step possible if we're off the end of the lists
   return () if ($#{$self->{owner}{left}}  < $lidx);
   return () if ($#{$self->{owner}{right}} < $ridx);
 
   # only include a token if taking a step in that side
-  my $left_tok  = $self->{owner}{left}[$lidx] if $args{left};
-  my $right_tok = $self->{owner}{right}[$ridx] if $args{right};
+  my $left_tok  = $self->{owner}{left}[$lidx] if $left;
+  my $right_tok = $self->{owner}{right}[$ridx] if $right;
 
   my $incr_penalty = $self->{owner}->weight_scale * $self->{owner}->weighter($left_tok, $right_tok);
 
@@ -423,8 +413,8 @@ sub take_step {
 
   return $class->new(lidx => $lidx, ridx => $ridx,
 		     owner => $self->{owner},
-		     left => $args{left},
-		     right => $args{right},
+		     left => $left,
+		     right => $right,
 		     incr_penalty => $incr_penalty,
 		     penalty => $penalty,
 		     parent => $self,

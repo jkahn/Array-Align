@@ -132,14 +132,6 @@ sub _search {
       }
       $heap->insert($cand);
     }
-
-#     if (not @next) {
-#       # must be finished
-#       push @solutions, $best;
-#     }
-#     else {
-#       $heap->insert(@next);
-#     }
   }
   return @solutions;
 }
@@ -250,8 +242,6 @@ underestimate.
 =cut
 
 sub admissible_heuristic {
-#   my ($self, %args) = @_;
-
   my $l_remaining = $#{$_[0]->{left}}  - $_[1];
   my $r_remaining = $#{$_[0]->{right}} - $_[2];
 
@@ -334,6 +324,12 @@ under the same terms as Perl itself.
 
 =cut
 
+#################################
+# UTILITY CLASS Array::Align::Step
+#
+# represents a single step in the alignment.
+
+
 package Array::Align::Step;
 use strict;
 use warnings;
@@ -407,7 +403,8 @@ sub take_step {
   my $left_tok  = $self->{owner}{left}[$lidx] if $left;
   my $right_tok = $self->{owner}{right}[$ridx] if $right;
 
-  my $incr_penalty = $self->{owner}->weight_scale * $self->{owner}->weighter($left_tok, $right_tok);
+  my $incr_penalty = $self->{owner}->weight_scale
+    * $self->{owner}->weighter($left_tok, $right_tok);
 
   my $penalty = $self->{penalty} + $incr_penalty;
 
@@ -420,6 +417,5 @@ sub take_step {
 		     parent => $self,
 		     num_step => ($self->{num_step} + 1));
 }
-
 
 1; # End of Array::Align

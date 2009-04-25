@@ -82,13 +82,7 @@ sub _search {
   if (not defined $nbest) {
     croak "_search method needs nbest";
   }
-  my $init =
-    Array::Align::Step->new(lidx => -1, ridx => -1,
-			    owner => $self, parent => undef,
-			    anchor => 1, # don't return this alignment
-			    penalty => 0,
-			    num_step => 0,
-			    );
+  my $init = Array::Align::Step->anchor (owner => $self);
 
   my %best_costs;
 
@@ -340,6 +334,19 @@ sub new {
   return bless {@_}, $class;
 }
 
+sub anchor {
+  my $class = shift;
+  my %args = @_;
+
+  $args{lidx} = -1;
+  $args{ridx} = -1;
+
+  $args{parent} = undef;
+  $args{anchor} = 1;
+  $args{penalty} = 0;
+  $args{num_step} = 0;
+  return $class->new(%args);
+}
 sub grow {
   return (
 	  $_[0]->take_step(1,1),

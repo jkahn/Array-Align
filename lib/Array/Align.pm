@@ -395,21 +395,23 @@ sub take_step {
   my $lidx = $self->{lidx} + $left;
   my $ridx = $self->{ridx} + $right;
 
+  my $owner = $self->{owner};
+
   # no step possible if we're off the end of the lists
-  return () if ($#{$self->{owner}{left}}  < $lidx);
-  return () if ($#{$self->{owner}{right}} < $ridx);
+  return () if ($#{$owner->{left}}  < $lidx);
+  return () if ($#{$owner->{right}} < $ridx);
 
   # only include a token if taking a step in that side
-  my $left_tok  = $self->{owner}{left}[$lidx] if $left;
-  my $right_tok = $self->{owner}{right}[$ridx] if $right;
+  my $left_tok  = $owner->{left}[$lidx] if $left;
+  my $right_tok = $owner->{right}[$ridx] if $right;
 
-  my $incr_penalty = $self->{owner}->weight_scale
-    * $self->{owner}->weighter($left_tok, $right_tok);
+  my $incr_penalty = $owner->weight_scale
+    * $owner->weighter($left_tok, $right_tok);
 
   my $penalty = $self->{penalty} + $incr_penalty;
 
   return $class->new(lidx => $lidx, ridx => $ridx,
-		     owner => $self->{owner},
+		     owner => $owner,
 		     left => $left,
 		     right => $right,
 		     incr_penalty => $incr_penalty,

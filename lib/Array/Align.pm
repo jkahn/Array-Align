@@ -109,7 +109,7 @@ sub _search {
     if ($VERBOSE > 1) {
       warn "left: $best->{lidx}/$#{$self->{left}} " .
 	"right: $best->{ridx}/$#{$self->{right}} : " .
-	  sprintf ("%3f (%3f)", $best->{penalty}, $heuristic ). "\n";
+	  sprintf ("%3f (%3f)", $best->penalty(), $heuristic ). "\n";
     }
 
     if ($best->is_finished()) {
@@ -157,7 +157,7 @@ cost (beyond the shortest-path search) for the best path.
 
 sub penalty {
   my ($self, %args) = @_;
-  return $self->{best}->{penalty} / $self->weight_scale() ;
+  return $self->{best}->penalty() / $self->weight_scale() ;
 }
 
 sub weight { shift->penalty(@_) }
@@ -333,6 +333,7 @@ sub new {
   my ($class) = shift;
   return bless {@_}, $class;
 }
+sub penalty { return $_[0]{penalty}; }
 
 sub anchor {
   my $class = shift;

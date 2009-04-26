@@ -18,7 +18,7 @@ Version 0.01
 =cut
 
 our $VERSION = '0.01';
-our $VERBOSE = 1;  # while building
+our $VERBOSE = 0;  # while building
 
 =head1 SYNOPSIS
 

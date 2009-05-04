@@ -138,12 +138,26 @@ sub _search {
 
 =item pairwise()
 
+returns the pairs ([l,r])*
+
 =cut
 
 sub pairwise {
   my ($self, %args) = @_;
   my $best = $self->{best};
   return $best->pairs();
+}
+
+=item costs()
+
+returns the costs corresponding to the pairs
+
+=cut
+
+sub costs {
+  my ($self, %args) = @_;
+  my $best = $self->{best};
+  return $best->costs();
 }
 
 =item penalty()
@@ -354,6 +368,11 @@ sub grow {
 	  $_[0]->take_step(1,0),
 	  $_[0]->take_step(0,1)
 	 );
+}
+
+sub costs {
+  my $self = shift;
+  return map { $_->{incr_penalty} / $self->{owner}->weight_scale() } $self->path();
 }
 
 sub path {

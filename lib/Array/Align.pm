@@ -282,14 +282,14 @@ learner value that limits the possible steps-at-a-time taken by the aligner.
 arguments are C<leftidx> and C<rightidx>, which indicates the index of
 the jumping-off-point.
 
-Default implementation returns C<(1,1)>, which indicates that steps
+Default implementation returns C<([1,1],[0,1],[1,0])>, which indicates that steps
 should be at most 1x1.  If larger values are returned, the C<weighter>
 implementation must be able to handle longer lists of form
 C<(L1,R1,L2,R2,...)>
 
 =cut
 
-sub step_range { return (1,1) };
+sub step_range { return [1,1],[0,1],[1,0] };
 
 =back
 
@@ -379,18 +379,11 @@ sub anchor {
   return $class->new(%args);
 }
 sub grow {
-  my ($l_step, $r_step) =
-    $_[0]->{owner}->step_range($_[0]->{lidx}, $_[0]->{ridx});
-
-  my (@return);
-
-  while ($l_step or $r_step) {
-    push @return, $_[0]->take_step($l_step, $r_step);
-    push @return, $_[0]->take_step($l_step, $r_step -1) if $r_step;
-    push @return, $_[0]->take_step($l_step-1, $r_step) if $l_step;
-    $l_step-- if $l_step;
-    $r_step-- if $r_step;
+  my @return;
+  for ( $_[0]->{owner}->step_range($_[0]->{lidx}, $_[0]->{ridx}) ) {
+    push @return, $_[0]->take_step( @$_ );
   }
+
   return @return;
 }
 

@@ -138,7 +138,8 @@ sub _search {
 
 =item pairwise()
 
-returns the pairs ([l,r])*
+returns the pairs C<([left,right])*> .  Will not work if step_size is changed;
+use stepwise instead.
 
 =cut
 
@@ -148,9 +149,24 @@ sub pairwise {
   return $best->pairs();
 }
 
+=item stepwise()
+
+returns the tuples C<< ({left =>[left-list],right =>[right-list]})*
+>>.  if step_size is not modified, probably better to use C<pairwise>
+for simpler data structures.
+
+=cut
+
+sub stepwise {
+  my ($self, %args) = @_;
+  my $best = $self->{best};
+  return $best->steps();
+}
+
 =item costs()
 
-returns the costs corresponding to the pairs
+returns the costs corresponding to the pairs (C<pairwise>) or steps
+(C<stepwise>).
 
 =cut
 
@@ -275,21 +291,92 @@ Default is
 
 sub weight_scale { return 1000; }
 
+=back
+
+=head1 Changing the step sizes
+
+For some arrangements, you may want the subclass to be able to take
+step sizes larger than 1x1.  Of course, this increases the complexity
+of the search, but for some solutions this is required, especially
+when a token on one side may match a sequence of more than one
+on the other.
+
+One example of a situation where this might be needed: matching a
+hyphenated form of a word to a whitespace-separated form. In the
+example below, traditional Levenshtein alignments would give this:
+
+  a vacuum-cleaner
+  M SUB----------- INS
+  a vacuum         cleaner
+
+but we'd prefer
+
+  a vacuum-cleaner
+  M --MATCH-------
+  a vacuum cleaner
+
+ideally, C<vacuum-cleaner> and (C<vacuum>, C<cleaner>) should be
+matched with a cost of zero (or some minor hyphenation penalty), but
+this requires a 1x2 match, not the usual 1x1 (or 1x0, 0x1 that
+correspond to deletions and insertions).
+
+The methods described in this section allow the subclass to declare
+that larger steps (e.g., the necessary 2x1 match) are to be explored.
+
+=over
+
 =item step_range
 
-learner value that limits the possible steps-at-a-time taken by the aligner.
+Tells the search algorithm the size of the available step (optionally
+at the given position).
 
-arguments are C<leftidx> and C<rightidx>, which indicates the index of
-the jumping-off-point.
+arguments are C<leftidx> and C<rightidx>, which indicate the index of
+the jumping-off-point, in case certain (larger) steps may only be
+taken at certain points in the matrix. (Default ignores these).
 
-Default implementation returns C<([1,1],[0,1],[1,0])>, which indicates that steps
-should be at most 1x1.  If larger values are returned, the C<weighter>
-implementation must be able to handle longer lists of form
-C<(L1,R1,L2,R2,...)>
+Must return a list of list-refs, indicating the step-dimensions
+possible from this point.  (If you return a step that would step "off"
+the grid of possible search paths, that step will be silently ignored.
+This is a feature, not a bug, because it means that implementations of
+C<step_range> are not I<required> to deal with the C<leftidx> and
+C<rightidx> arguments.)
+
+B<Default implementation> returns C<([1,1],[0,1],[1,0])> in all
+circumstances, which indicates that steps should be at most 1x1; this
+corresponds to the traditional Levenshtein/Wagner-Fischer style
+single-step edit distances.  If larger values are returned, subclass
+will need to reimplement C<step_weighter> to cope with longer steps.
 
 =cut
 
-sub step_range { return [1,1],[0,1],[1,0] };
+sub step_range { return ([1,1],[0,1],[1,0]) };
+
+=item step_weighter
+
+takes hashkey arguments C<< left => listref, right => listref >> and
+returns cost for aligning these two lists. 
+
+B<Default implementation> will call C<weighter> with what it expects
+to be the single-elements in the C<left> and C<right> lists. This
+default is compatible with the C<step_range> default.
+
+Subclasses may of course override C<step_weighter> and avoid
+implementing C<weighter> altogether.
+
+=cut
+
+sub step_weighter {
+  my ($self, %args) = @_;
+
+  croak "left step >1 without reimplementation of step_weighter"
+    if @{$args{left}} > 1;
+  croak "right step >1 without reimplementation of step_weighter"
+    if @{$args{right}} > 1;
+
+  my ($left) = @{$args{left}};
+  my ($right) = @{$args{right}};
+  return $self->weighter($left, $right);
+}
 
 =back
 
@@ -403,7 +490,7 @@ sub path {
   return @path;
 }
 
-sub pair {
+sub step {
   my $self = shift;
   my @leftidxs =
     map { $self->{lidx} - $self->{left}  + $_}
@@ -415,14 +502,21 @@ sub pair {
       1 .. $self->{right};
   my (@right) = map { $self->{owner}{right}[$_] } @rightidxs;
 
-  my @out;
-  while (@left or @right) {
-    my $left = shift @left;
-    push @out, $left;
-    my $right = shift @right;
-    push @out, $right;
-  }
-  return \@out;
+  return { left => \@left, right => \@right };
+}
+sub pair {
+  my $self = shift;
+  my $step = $self->step();
+  croak "left step >1 in pair" if @{$step->{left}} >1;
+  croak "right step >1 in pair" if @{$step->{right}} >1;
+  my ($left)  = @{$step->{left}};
+  my ($right) = @{$step->{right}};
+  return [$left, $right];
+}
+
+sub steps {
+  my ($self, %args) = @_;
+  return map {$_->step()} $self->path();
 }
 
 sub pairs {
@@ -461,18 +555,9 @@ sub take_step {
   my @ltoks = map { $owner->{left} [$self->{lidx} + $_] } (1 .. $left);
   my @rtoks = map { $owner->{right}[$self->{ridx} + $_] } (1 .. $right);
 
-  my @weightertoks;
-  while (@ltoks or @rtoks) {
-    my $left = shift @ltoks;
-    push @weightertoks, $left;
-
-    my $right = shift @rtoks;
-    push @weightertoks, $right;
-  }
-
 
   my $incr_penalty = $owner->weight_scale
-    * $owner->weighter(@weightertoks);
+    * $owner->step_weighter(left => \@ltoks, right => \@rtoks);
 
   my $penalty = $self->{penalty} + $incr_penalty;
 

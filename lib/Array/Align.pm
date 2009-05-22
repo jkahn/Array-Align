@@ -206,8 +206,8 @@ Levenshtein behavior:
   }
 
 Note that this is an B<additional> penalty. Every step (diagonal or
-not) has cost 1 plus the penalty returned by the C<weighter> method,
-in order to find the shortest alignment first.
+not) has cost 1/WEIGHT_SCALE plus the penalty returned by the
+C<weighter> method, in order to find the shortest alignment first.
 
 Because the number of steps is included (as mentioned above), the
 approach will strongly prefer substitutions to singleton steps on
@@ -274,6 +274,22 @@ Default is
 =cut
 
 sub weight_scale { return 1000; }
+
+=item step_range
+
+learner value that limits the possible steps-at-a-time taken by the aligner.
+
+arguments are C<leftidx> and C<rightidx>, which indicates the index of
+the jumping-off-point.
+
+Default implementation returns C<(1,1)>, which indicates that steps
+should be at most 1x1.  If larger values are returned, the C<weighter>
+implementation must be able to handle longer lists of form
+C<(L1,R1,L2,R2,...)>
+
+=cut
+
+sub step_range { return (1,1) };
 
 =back
 
@@ -363,11 +379,19 @@ sub anchor {
   return $class->new(%args);
 }
 sub grow {
-  return (
-	  $_[0]->take_step(1,1),
-	  $_[0]->take_step(1,0),
-	  $_[0]->take_step(0,1)
-	 );
+  my ($l_step, $r_step) =
+    $_[0]->{owner}->step_range($_[0]->{lidx}, $_[0]->{ridx});
+
+  my (@return);
+
+  while ($l_step or $r_step) {
+    push @return, $_[0]->take_step($l_step, $r_step);
+    push @return, $_[0]->take_step($l_step, $r_step -1) if $r_step;
+    push @return, $_[0]->take_step($l_step-1, $r_step) if $l_step;
+    $l_step-- if $l_step;
+    $r_step-- if $r_step;
+  }
+  return @return;
 }
 
 sub costs {
@@ -388,10 +412,24 @@ sub path {
 
 sub pair {
   my $self = shift;
-  return [
-	  ($self->{left} ? $self->{owner}{left}[$self->{lidx}] : undef),
-	  ($self->{right} ? $self->{owner}{right}[$self->{ridx}] : undef)
-	 ];
+  my @leftidxs =
+    map { $self->{lidx} - $self->{left}  + $_}
+      1 .. $self->{left};
+  my (@left) = map { $self->{owner}{left}[$_] } @leftidxs;
+
+  my @rightidxs =
+    map { $self->{ridx} - $self->{right} + $_}
+      1 .. $self->{right};
+  my (@right) = map { $self->{owner}{right}[$_] } @rightidxs;
+
+  my @out;
+  while (@left or @right) {
+    my $left = shift @left;
+    push @out, $left;
+    my $right = shift @right;
+    push @out, $right;
+  }
+  return \@out;
 }
 
 sub pairs {
@@ -416,28 +454,37 @@ sub is_finished {
 
 sub take_step {
   my ($self, $left, $right) = @_;
+
+  return unless ($left or $right);  # (0,0) not a valid step
+
   my $class = ref $self;
 
-
-  my $lidx = $self->{lidx} + $left;
-  my $ridx = $self->{ridx} + $right;
+  # no step possible if we're off the end of the lists
+  return () if ($#{$self->{owner}->{left}}  < $self->{lidx} + $left);
+  return () if ($#{$self->{owner}->{right}} < $self->{ridx} + $right);
 
   my $owner = $self->{owner};
 
-  # no step possible if we're off the end of the lists
-  return () if ($#{$owner->{left}}  < $lidx);
-  return () if ($#{$owner->{right}} < $ridx);
+  my @ltoks = map { $owner->{left} [$self->{lidx} + $_] } (1 .. $left);
+  my @rtoks = map { $owner->{right}[$self->{ridx} + $_] } (1 .. $right);
 
-  # only include a token if taking a step in that side
-  my $left_tok  = $owner->{left}[$lidx] if $left;
-  my $right_tok = $owner->{right}[$ridx] if $right;
+  my @weightertoks;
+  while (@ltoks or @rtoks) {
+    my $left = shift @ltoks;
+    push @weightertoks, $left;
+
+    my $right = shift @rtoks;
+    push @weightertoks, $right;
+  }
+
 
   my $incr_penalty = $owner->weight_scale
-    * $owner->weighter($left_tok, $right_tok);
+    * $owner->weighter(@weightertoks);
 
   my $penalty = $self->{penalty} + $incr_penalty;
 
-  return $class->new(lidx => $lidx, ridx => $ridx,
+  return $class->new(lidx => $self->{lidx} + $left,
+		     ridx => $self->{ridx} + $right,
 		     owner => $owner,
 		     left => $left,
 		     right => $right,

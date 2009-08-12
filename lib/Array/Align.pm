@@ -202,6 +202,16 @@ Methods that must be implemented by the subclass
 
 =item weighter
 
+=cut
+
+sub weighter {
+  my $self = shift;
+  my $class = ref $self;
+  confess "class $class hasn't implemented weighter?";
+}
+
+=pod
+
 Provide an additional penalty for a given step. This penalty should be
 scaled according to the cost of a single step (a sub, delete, or
 insert).
